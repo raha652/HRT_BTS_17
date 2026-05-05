@@ -1,84 +1,130 @@
-// 🔗 لینک اسکریپت Google Sheet (با doGet)
-const SHEET_URL = "https://script.google.com/macros/s/AKfycbwXGFd3p2DFyy4TzwbGu0lBwGzJAsi7z9ZcO8wlFEu9b_mQwp9Sq0Jm0JxORjto70KSrQ/exec";
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzUjgAKQT_EFS3zYzY82pH2uXES_ATQjjuXsbsEV6q3GyFkJIh0dz9Ei8U9ny1SEeGvmQ/exec";
 
-// 🔗 اطلاعات تلگرام
 const BOT_TOKEN = "8249834114:AAE8N23oUkHLQmBemZ83CQD-fXgbLNAi7b4";
-const CHAT_ID = "-1001867257289"; // آیدی گروه
-const THREAD_ID = 1709; // آیدی تاپیک
+const CHAT_ID = "-1001867257289";
+const THREAD_ID = 1709;
 
-// لیست کاربران (می‌توانید این لیست را به دلخواه تغییر دهید)
-const USERS = {
-  "1806": "18",
-  "1765": "1",
-  "1807": "1",
-  "1605": "nm",
-  "1568": "tsh",
-  "1613": "m@m",
-  "1831": "sh",
-  "1865": "hm",
-  "1869": "mr",
-  "1872": "qafori",
-  "1892": "az",
-  "1893": "sa",
-  "1850": "nh",
-  "1781": "zs",
-  "1826": "rabbani",
-  "1875": "qu",
-  "1715": "ma",
-  "1899": "fa",
-  "1898": "zp",
-  "180003": "ha",
-  "180001": "gr",
-  "user450": "us"
-};
+const ADMIN_MEMBER_ID = "18";
 
+const loginForm = document.getElementById("loginForm");
+const loginStatus = document.getElementById("loginStatus");
+const loginContainer = document.getElementById("loginContainer");
+const mainContent = document.getElementById("mainContent");
+const adminContent = document.getElementById("adminContent");
+const reportForm = document.getElementById("reportForm");
+const reportSubmitBtn = document.getElementById("reportSubmitBtn");
+const uploadForm = document.getElementById("uploadForm");
+const formBtn = document.getElementById("formBtn");
+const uploadBtn = document.getElementById("uploadBtn");
+const memberForm = document.getElementById("memberForm");
+const memberStatus = document.getElementById("memberStatus");
 
+const urlParams = new URLSearchParams(window.location.search);
+const base = urlParams.get("base") || "BTS_17";
+let isReportSubmitting = false;
 
-// فرم ورود
-document.getElementById("loginForm").addEventListener("submit", function (e) {
+loginForm.addEventListener("submit", async function (e) {
   e.preventDefault();
+
   const username = document.getElementById("loginUsername").value.trim();
-  const password = document.getElementById("loginPassword").value;
-  if (USERS[username] && USERS[username] === password) {
-    localStorage.setItem("technician_username", username);
-    loginSuccess(username);
-  } else {
-    document.getElementById("loginStatus").textContent = "❌ نام کاربری یا رمز نادرست است.";
+  const password = document.getElementById("loginPassword").value.trim();
+
+  loginStatus.textContent = "در حال ورود...";
+
+  try {
+    const members = await fetchMembers();
+    const matchedMember = members.find((member) => member.username === username && member.password === password);
+
+    if (matchedMember) {
+      localStorage.setItem("technician_username", username);
+      localStorage.setItem("technician_id", matchedMember.memberId || "");
+      localStorage.setItem("technician_name", `${matchedMember.firstName || ""} ${matchedMember.lastName || ""}`.trim());
+      loginSuccess(matchedMember);
+      return;
+    }
+
+    loginStatus.textContent = "❌ نام کاربری یا رمز نادرست است.";
+  } catch (error) {
+    console.error(error);
+    loginStatus.textContent = "❌ دریافت لیست اعضا از شیت ممکن نشد.";
   }
 });
 
-function loginSuccess(username) {
-  // مخفی کردن بخش ورود و نمایش محتوای اصلی
-  document.getElementById("loginContainer").classList.add("hidden");
-  document.getElementById("mainContent").classList.remove("hidden");
+function loginSuccess(member) {
+  loginContainer.classList.add("hidden");
+  adminContent.classList.add("hidden");
+  mainContent.classList.add("hidden");
 
+  if (isAdminMember(member)) {
+    adminContent.classList.remove("hidden");
+    return;
+  }
 
-  // 🟢 تنظیم خودکار فیلد ID از نام کاربری و readonly کردن آن
+  mainContent.classList.remove("hidden");
+
+  const technicianField = document.getElementById("technician");
   const idField = document.getElementById("employee_id");
-  idField.value = username;
+  const displayName = `${member.firstName || ""} ${member.lastName || ""}`.trim() || member.username;
+
+  technicianField.value = displayName;
+  idField.value = member.memberId || member.username;
   idField.readOnly = true;
+  setUploadFormDefaults(displayName);
 }
 
+function isAdminMember(member) {
+  return [member.memberId, member.username]
+    .map((value) => String(value || "").trim())
+    .includes(ADMIN_MEMBER_ID);
+}
 
+function normalizeMember(row) {
+  return {
+    firstName: String(row.firstName || row.name || row["نام"] || "").trim(),
+    lastName: String(row.lastName || row.familyName || row["نام خانوادگی"] || "").trim(),
+    memberId: String(row.memberId || row.id || row["ایدی"] || "").trim(),
+    username: String(row.username || row.user || row["یوزر"] || "").trim(),
+    password: String(row.password || row.pass || row["پسورد"] || "").trim()
+  };
+}
 
-// گرفتن مقدار base از URL؛ اگر فیلد base هم در فرم نباشد، این مقدار از URL گرفته می‌شود
-const urlParams = new URLSearchParams(window.location.search);
-const base = urlParams.get("base") || "BTS_17";  // پیش‌فرض BTS_1
+async function fetchMembers() {
+  const response = await fetch(`${SHEET_URL}?action=getMembers`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch members");
+  }
 
-document.getElementById("formBtn").addEventListener("click", () => {
-  document.getElementById("reportForm").classList.remove("hidden");
-  document.getElementById("uploadForm").classList.add("hidden");
+  const data = await response.json();
+  const rows = Array.isArray(data.members) ? data.members : Array.isArray(data) ? data : [];
+
+  const members = rows
+    .map(normalizeMember)
+    .filter((member) => member.username && member.password);
+
+  return members;
+}
+
+formBtn.addEventListener("click", () => {
+  reportForm.classList.remove("hidden");
+  uploadForm.classList.add("hidden");
 });
 
-document.getElementById("uploadBtn").addEventListener("click", () => {
-  document.getElementById("uploadForm").classList.remove("hidden");
-  document.getElementById("reportForm").classList.add("hidden");
+uploadBtn.addEventListener("click", () => {
+  uploadForm.classList.remove("hidden");
+  reportForm.classList.add("hidden");
 });
 
-// رویداد ارسال فرم گزارش به Google Sheet
-document.getElementById("reportForm").addEventListener("submit", function (e) {
+reportForm.addEventListener("submit", function (e) {
   e.preventDefault();
-  
+
+  if (isReportSubmitting) {
+    return;
+  }
+
+  isReportSubmitting = true;
+  reportSubmitBtn.disabled = true;
+  document.getElementById("formStatus").textContent = "در حال ارسال گزارش...";
+
   const params = new URLSearchParams({
     technician: document.getElementById("technician").value,
     technician_assistant: document.getElementById("technician_assistant").value,
@@ -87,59 +133,89 @@ document.getElementById("reportForm").addEventListener("submit", function (e) {
     device_details: document.getElementById("device_details").value,
     date: document.getElementById("date").value,
     employee_id: document.getElementById("employee_id").value,
-    base: base  // از URL گرفته می‌شود
-  });
-  
-fetch(`${SHEET_URL}?${params.toString()}`)
-  .then(res => res.text())
-  .then(responseText => {
-    document.getElementById("formStatus").textContent = "✅ " + responseText;
-    this.reset();
-    // 🟢 حفظ نام تکنسین و آیدی پس از ریست فرم
-    const savedUsername = localStorage.getItem("technician_username");
-    document.getElementById("technician").value = savedUsername;
-    document.getElementById("employee_id").value = savedUsername;
-    document.getElementById("employee_id").readOnly = true;
-  })
-  .catch(err => {
-    console.error(err);
-    document.getElementById("formStatus").textContent = "❌ خطا در ارسال.";
+    base: base
   });
 
+  fetch(`${SHEET_URL}?${params.toString()}`, {
+    method: "GET",
+    cache: "no-store"
+  })
+    .then((res) => res.text())
+    .then((responseText) => {
+      document.getElementById("formStatus").textContent = "✅ " + responseText;
+      this.reset();
+
+      const savedName = localStorage.getItem("technician_name") || localStorage.getItem("technician_username");
+      const savedId = localStorage.getItem("technician_id") || localStorage.getItem("technician_username");
+      document.getElementById("technician").value = savedName;
+      document.getElementById("employee_id").value = savedId;
+      document.getElementById("employee_id").readOnly = true;
+    })
+    .catch((err) => {
+      console.error(err);
+      document.getElementById("formStatus").textContent = "❌ خطا در ارسال.";
+    })
+    .finally(() => {
+      isReportSubmitting = false;
+      reportSubmitBtn.disabled = false;
+    });
 });
 
-// ارسال فایل به تلگرام
 let xhr;
-document.getElementById("uploadForm").addEventListener("submit", function (e) {
+uploadForm.addEventListener("submit", function (e) {
   e.preventDefault();
-  
-  const files = this.media.files;
-  const caption = document.getElementById("caption").value;
+
+  const files = Array.from(this.media.files);
+  const caption = document.getElementById("caption").value.trim();
+  const uploadTechnician = document.getElementById("uploadTechnician").value.trim();
+  const uploadTechnicianAssistant = document.getElementById("uploadTechnicianAssistant").value.trim();
+  const uploadDate = document.getElementById("uploadDate").value;
   if (!files.length) return;
 
-  const mediaGroup = [];
   const formData = new FormData();
-  [...files].forEach((file, index) => {
-    mediaGroup.push({
-      type: file.type.startsWith("video/") ? "video" : "photo",
-      media: `attach://${file.name}`,
-      caption: index === 0 ? caption : undefined
-    });
-    formData.append(file.name, file);
+  const formattedCaption = buildUploadCaption({
+    technician: uploadTechnician,
+    technicianAssistant: uploadTechnicianAssistant,
+    date: uploadDate,
+    text: caption
   });
-  
+  const isSingleFile = files.length === 1;
+
   formData.append("chat_id", CHAT_ID);
   formData.append("message_thread_id", THREAD_ID);
-  formData.append("media", JSON.stringify(mediaGroup));
-  
+
+  let endpoint = "";
+
+  if (isSingleFile) {
+    const file = files[0];
+    const mediaField = file.type.startsWith("video/") ? "video" : "photo";
+    endpoint = mediaField === "video" ? "sendVideo" : "sendPhoto";
+    formData.append(mediaField, file);
+    formData.append("caption", formattedCaption);
+  } else {
+    const mediaGroup = [];
+
+    files.forEach((file, index) => {
+      mediaGroup.push({
+        type: file.type.startsWith("video/") ? "video" : "photo",
+        media: `attach://${file.name}`,
+        caption: index === 0 ? formattedCaption : undefined
+      });
+      formData.append(file.name, file);
+    });
+
+    endpoint = "sendMediaGroup";
+    formData.append("media", JSON.stringify(mediaGroup));
+  }
+
   document.getElementById("progressContainer").classList.remove("hidden");
   document.getElementById("cancelUploadBtn").classList.remove("hidden");
   const progressBar = document.getElementById("uploadProgress");
   const progressText = document.getElementById("progressText");
-  
+
   xhr = new XMLHttpRequest();
-  xhr.open("POST", `https://api.telegram.org/bot${BOT_TOKEN}/sendMediaGroup`, true);
-  
+  xhr.open("POST", `https://api.telegram.org/bot${BOT_TOKEN}/${endpoint}`, true);
+
   xhr.upload.onprogress = function (event) {
     if (event.lengthComputable) {
       const percent = Math.round((event.loaded / event.total) * 100);
@@ -149,21 +225,30 @@ document.getElementById("uploadForm").addEventListener("submit", function (e) {
       progressText.textContent = `📤 ارسال شده: ${sentMB} MB از ${totalMB} MB (${percent}%)`;
     }
   };
-  
+
   xhr.onload = function () {
     if (xhr.status === 200) {
       document.getElementById("uploadStatus").textContent = "✅ فایل‌ها موفقانه ارسال شدند.";
     } else {
-      document.getElementById("uploadStatus").textContent = "❌ خطا در ارسال فایل‌ها.";
+      let errorMessage = "❌ خطا در ارسال فایل‌ها.";
+      try {
+        const response = JSON.parse(xhr.responseText);
+        if (response.description) {
+          errorMessage = `❌ ${response.description}`;
+        }
+      } catch (error) {
+        console.error(error);
+      }
+      document.getElementById("uploadStatus").textContent = errorMessage;
     }
     resetProgressUI();
   };
-  
+
   xhr.onerror = function () {
     document.getElementById("uploadStatus").textContent = "❌ خطا در ارتباط.";
     resetProgressUI();
   };
-  
+
   xhr.send(formData);
 });
 
@@ -175,15 +260,77 @@ document.getElementById("cancelUploadBtn").addEventListener("click", function ()
   }
 });
 
+memberForm.addEventListener("submit", async function (e) {
+  e.preventDefault();
+
+  const firstName = document.getElementById("memberFirstName").value.trim();
+  const lastName = document.getElementById("memberLastName").value.trim();
+  const memberId = document.getElementById("memberId").value.trim();
+  const username = document.getElementById("memberUsername").value.trim();
+  const password = document.getElementById("memberPassword").value.trim();
+
+  if (!firstName || !lastName || !memberId || !username || !password) {
+    memberStatus.textContent = "❌ همه فیلدها را وارد کنید.";
+    return;
+  }
+
+  memberStatus.textContent = "در حال ذخیره اکانت...";
+
+  try {
+    const response = await fetch(SHEET_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "addMember",
+        firstName,
+        lastName,
+        memberId,
+        username,
+        password
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to save member");
+    }
+
+    const result = await response.json();
+    memberStatus.textContent = result.message || "✅ اکانت جدید ذخیره شد.";
+    memberForm.reset();
+  } catch (error) {
+    console.error(error);
+    memberStatus.textContent = "❌ ذخیره اکانت در شیت ممکن نشد.";
+  }
+});
+
 function resetProgressUI() {
-  document.getElementById("uploadForm").reset();
+  uploadForm.reset();
   document.getElementById("progressContainer").classList.add("hidden");
   document.getElementById("cancelUploadBtn").classList.add("hidden");
   document.getElementById("uploadProgress").value = 0;
   document.getElementById("progressText").textContent = "";
+  setUploadFormDefaults(localStorage.getItem("technician_name") || localStorage.getItem("technician_username") || "");
 }
 
+function setUploadFormDefaults(displayName) {
+  document.getElementById("uploadTechnician").value = displayName;
+  document.getElementById("uploadDate").value = getTodayValue();
+}
 
+function buildUploadCaption({ technician, technicianAssistant, date, text }) {
+  return [
+    `تکنسین: ${technician || "-"}`,
+    `تکنسین همراه: ${technicianAssistant || "-"}`,
+    `تاریخ: ${date || "-"}`,
+    `فعالیت انجام شده: ${text || "-"}`
+  ].join("\n");
+}
 
+function getTodayValue() {
+  return new Date().toISOString().split("T")[0];
+}
 
-
+document.getElementById("date").value = getTodayValue();
+document.getElementById("uploadDate").value = getTodayValue();
